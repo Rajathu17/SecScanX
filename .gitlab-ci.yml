@@ -1,0 +1,23 @@
+stages:
+  - scan
+
+security_scan:
+  stage: scan
+  image: python:3.9
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+  before_script:
+    # Install Trivy
+    - apt-get update && apt-get install -y wget apt-transport-https gnupg lsb-release
+    - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
+    - echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | tee -a /etc/apt/sources.list.d/trivy.list
+    - apt-get update && apt-get install -y trivy
+    # Install Python deps
+    - pip install -r requirements.txt
+  script:
+    - python main.py python:3.9-alpine --webhook "$SLACK_WEBHOOK_URL" --cleanup
+  only:
+    - main
+    - merge_requests

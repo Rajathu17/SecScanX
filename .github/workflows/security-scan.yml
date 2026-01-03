@@ -1,0 +1,41 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0' # Weekly scan
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install Trivy
+      uses: aquasecurity/setup-trivy@v0.2.0
+      with:
+        cache: true
+        version: v0.48.0
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Security Scan
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        # Example: Scanning a public image. In a real scenario, you might build your app image first.
+        # Here we scan python:3.9-alpine as a demo.
+        python main.py python:3.9-alpine --webhook "$SLACK_WEBHOOK_URL" --cleanup

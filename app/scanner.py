@@ -34,3 +34,31 @@ class TrivyScanner:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Trivy output: {e}")
             raise RuntimeError("Failed to parse Trivy JSON output.")
+
+    def parse_results(self, scan_data: dict) -> dict:
+        """
+        Parses Trivy JSON output and aggregates vulnerability counts by severity.
+        Returns a dict like: {'CRITICAL': 0, 'HIGH': 2, 'MEDIUM': 5, 'LOW': 1, 'UNKNOWN': 0}
+        """
+        summary = {
+            "CRITICAL": 0,
+            "HIGH": 0,
+            "MEDIUM": 0,
+            "LOW": 0,
+            "UNKNOWN": 0
+        }
+
+        if "Results" not in scan_data:
+            logger.warning("No results found in Trivy scan output.")
+            return summary
+
+        for result in scan_data["Results"]:
+            if "Vulnerabilities" in result:
+                for vuln in result["Vulnerabilities"]:
+                    severity = vuln.get("Severity", "UNKNOWN").upper()
+                    if severity in summary:
+                        summary[severity] += 1
+                    else:
+                        summary["UNKNOWN"] += 1
+        
+        return summary

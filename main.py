@@ -3,27 +3,25 @@ import logging
 import sys
 import os
 
-# Ensure the app directory is in path (if running directly from root)
+# Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.scanner import TrivyScanner
-from app.parser import VulnerabilityParser
-from app.slack import SlackNotifier
+from app.notifier import SlackNotifier
+from app import docker_ops
 
-# Configure Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="SecureScan-Orchestrator: Trivy wrapper with Slack notifications.")
-    parser.add_argument("image", help="Docker image name to scan (e.g., alpine:latest)")
+    parser = argparse.ArgumentParser(description="SecScanX Orchestrator")
+    parser.add_argument("image", help="Docker image name to scan (e.g., python:3.9-alpine)")
     parser.add_argument("--webhook", help="Slack Incoming Webhook URL", required=False)
+    parser.add_argument("--cleanup", action="store_true", help="Remove image after scan")
     
     args = parser.parse_args()
 
@@ -35,20 +33,32 @@ def main():
         sys.exit(1)
 
     try:
-        # 1. Scan
-        scanner = TrivyScanner()
-        scan_results = scanner.scan_image(args.image)
+        # 1. Pull Image via Docker SDK
+        docker_ops.pull_image(args.image)
 
-        # 2. Parse
-        parser_logic = VulnerabilityParser()
-        summary = parser_logic.parse_results(scan_results)
+        # 2. Scan using Trivy
+        # Note: Assumes 'trivy' is installed (or inside the container if running via Docker)
+        scanner = TrivyScanner()
+        scan_data = scanner.scan_image(args.image)
         
-        # Log summary to console
+        # 3. Parse Results
+        summary = scanner.parse_results(scan_data)
         logger.info(f"Scan Summary for {args.image}: {summary}")
 
-        # 3. Notify
+        # 4. Notify Slack
         notifier = SlackNotifier(webhook_url)
-        notifier.send_summary(args.image, summary)
+        notifier.send_report(args.image, summary)
+
+        # 5. Cleanup (Optional)
+        if args.cleanup:
+            docker_ops.cleanup_image(args.image)
+
+        # 6. Exit with Failure if Critical/High found (for CI/CD gating)
+        if summary.get("CRITICAL", 0) > 0 or summary.get("HIGH", 0) > 0:
+            logger.error("Security Gate Failed: Critical/High vulnerabilities detected.")
+            sys.exit(1)
+        
+        logger.info("Security Scan Passed.")
 
     except Exception as e:
         logger.error(f"Orchestration failed: {e}")
